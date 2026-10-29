@@ -103,6 +103,8 @@ The backend is ready for a real-time deployment when the account-specific data p
 
 Every run returns `sources` with `is_live`, `label_quality`, retrieval time, cache age, and safe provenance. If a source is missing, malformed, expired, or unavailable, the service marks it and falls back to the research baseline; it never relabels synthetic data as a live observation. See [docs/DATA_ACCESS.md](docs/DATA_ACCESS.md) for the official access boundaries.
 
+The CMA product catalogue is the [network base-reflectivity product page](https://k.data.cma.cn/mekb/?dataCode=J.0017.0010.S001&r=data%2Fdetail). Changchun's public-data platform and its security boundaries are described in the [Jilin provincial data-platform response](https://xxgk.jl.gov.cn/zsjg/fgw_136504/gkml/202405/t20240529_8914673.html); the [Changchun municipal engineering institute](https://www.ccszy.com/news/1631) documents the existence of internal drainage ledgers and network data but does not publish a public machine endpoint.
+
 ## References and inspirations
 
 The implementation follows public interfaces and methods from Open-Meteo, UrbanFlood24, conformal prediction, ConvGRU-style spatiotemporal modelling, Google OR-Tools, OpenStreetMap/ODbL, Plotly, and Streamlit. These references inform adapters, evaluation design, uncertainty reporting, and visualisation; the repository does not copy closed source products.
