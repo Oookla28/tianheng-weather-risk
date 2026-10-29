@@ -58,6 +58,11 @@ class CmaRadarConfig:
     endpoint: str = field(default_factory=lambda: os.getenv("CMA_RADAR_ENDPOINT", ""))
     token: str = field(default_factory=lambda: os.getenv("CMA_RADAR_TOKEN", ""))
     product: str = field(default_factory=lambda: os.getenv("CMA_RADAR_PRODUCT", "reflectivity"))
+    # Optional official data-service parameters.  The account-specific
+    # endpoint may expose getRadaFileByTimeRange or a product download URL.
+    data_code: str = field(default_factory=lambda: os.getenv("CMA_RADAR_DATA_CODE", ""))
+    time_range: str = field(default_factory=lambda: os.getenv("CMA_RADAR_TIME_RANGE", ""))
+    station_ids: str = field(default_factory=lambda: os.getenv("CMA_RADAR_STATION_IDS", ""))
     timeout_seconds: float = field(default_factory=lambda: float(os.getenv("CMA_RADAR_TIMEOUT", "8")))
     cache_dir: str = field(default_factory=lambda: os.getenv("CMA_RADAR_CACHE_DIR", "data/cache/cma_radar"))
     max_cache_age_seconds: int = field(default_factory=lambda: int(os.getenv("CMA_RADAR_MAX_CACHE_AGE", "1800")))
@@ -147,7 +152,17 @@ class CmaRadarAdapter:
 
     def _request(self, latitude: float | None, longitude: float | None) -> tuple[Any, str]:
         endpoint = self.config.endpoint
-        query = {"product": self.config.product}
+        query: dict[str, str] = {}
+        if self.config.data_code:
+            query["dataCode"] = self.config.data_code
+        elif self.config.product:
+            query["product"] = self.config.product
+        if self.config.time_range:
+            query["timeRange"] = self.config.time_range
+        if self.config.station_ids:
+            query["staIds"] = self.config.station_ids
+        if self.config.data_code:
+            query.setdefault("dataFormat", "json")
         if latitude is not None:
             query["latitude"] = f"{float(latitude):.5f}"
         if longitude is not None:
@@ -232,14 +247,31 @@ class CmaRadarAdapter:
                     pass
             if isinstance(child, list):
                 return child, dict(payload)
-        for key in ("download_url", "url", "file_url"):
+        # CMA file-information responses commonly use DS/fileInfos and upper
+        # case FILE_URL fields; normalize those envelopes before reading data.
+        for key in ("DS", "ds", "files", "fileInfos", "file_infos", "items"):
+            items = payload.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, Mapping):
+                        try:
+                            return self._extract_mapping(item)
+                        except RadarDataError:
+                            continue
+        for key in ("download_url", "downloadUrl", "url", "file_url", "FILE_URL", "FILE_PATH"):
             url = payload.get(key)
             if isinstance(url, str) and url:
+                url = urllib.parse.urljoin(self.config.endpoint, url)
                 body, content_type = self._request_url(url)
                 if isinstance(body, Mapping):
                     return self._extract_mapping(body)
                 if isinstance(body, list):
                     return body, {}
+                if "json" in content_type.lower() or body.lstrip()[:1] in (b"{", b"["):
+                    decoded = json.loads(bytes(body).decode("utf-8"))
+                    if isinstance(decoded, Mapping):
+                        return self._extract_mapping(decoded)
+                    return decoded, {}
                 return self._read_numpy_bytes(bytes(body))
         for key in ("values", "reflectivity", "radar", "dbz", "array"):
             if key in payload:
@@ -251,9 +283,13 @@ class CmaRadarAdapter:
         if self.config.token:
             headers["Authorization"] = f"Bearer {self.config.token}"
         request = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
-            body = response.read()
-            content_type = str(response.headers.get("Content-Type", ""))
+        if url.startswith("file://"):
+            body = Path(urllib.parse.urlparse(url).path).read_bytes()
+            content_type = "application/octet-stream"
+        else:
+            with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
+                body = response.read()
+                content_type = str(response.headers.get("Content-Type", ""))
         if "json" in content_type.lower() or body.lstrip()[:1] in (b"{", b"["):
             return json.loads(body.decode("utf-8")), content_type
         return body, content_type
