@@ -1,0 +1,39 @@
+# 天衡 · 城市与研究区配置
+city:
+  name: 示范区（合成城市）
+  region_id: DEMO-CITY-01
+  note: >-
+    当前仓库以确定性合成城市作为可复现基准。接入真实城区时，只需替换 ingest 层适配器，
+    并保持本文件中的坐标系与网格口径一致。
+  crs: EPSG:4326
+  grid:
+    n_rows: 20
+    n_cols: 20
+    cell_size_m: 1000
+    origin_lon: 118.700
+    origin_lat: 32.030
+  time:
+    step_minutes: 30
+    steps_per_event: 30
+    start_date: "2024-07-01"
+    event_interval_days: 3
+  events: 12
+  seed: 42
+  assets:
+    roads: 10
+    hospitals: 4
+    schools: 6
+    drainage_points: 4
+  storm:
+    peak_mm_per_30min: [22.0, 64.0]
+    secondary_cell_ratio: 0.45
+
+# 应急资源约束：行动优化与 PlanValidator 共用同一口径。
+resources:
+  patrol_teams: 4
+  drainage_units: 3
+  traffic_units: 2
+  shift_minutes: 240
+  patrol_speed_kmh: 25
+  max_road_closures: 3
+  response_window_minutes: 180
