@@ -69,14 +69,16 @@ The adapters are designed for Open-Meteo, GPM IMERG, ERA5/ERA5-Land, authorised 
 ## Repository layout
 
 ```text
-app.py                 frontend entrypoint kept outside this release
-src/                   contracts, preprocessing, models, risk, optimisation and services
-configs/               city, model, rule and knowledge-base configuration
-data/                 raw, processed, and external-data manifests
-artifacts/             reports, figures, and model outputs
-tests/                 service and data-contract tests
-docs/                  proposal, paper, experiment, and deployment notes
+README.md              project overview, architecture, and research protocol
+pyproject.toml         English package metadata and test configuration
+requirements.txt       runtime and test dependencies
+configs/               city, model, rule, and knowledge-base configuration
+src/common/            data contracts, provenance, IO, and versioning
+src/preprocess/        terrain and grid-derived features
+.gitignore             release hygiene and generated-file rules
 ```
+
+The public drop intentionally omits the Streamlit frontend entrypoint and local-only presentation assets.
 
 ## References and inspirations
 
