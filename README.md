@@ -40,6 +40,9 @@ The codebase keeps data, model, decision, provenance, and presentation layers se
 - Four-dimensional radar voxel contract `(time, height, y, x)` with convective-core summaries and advection nowcast.
 - Urban drainage digital twin baseline with storage, overflow, flooded-area indicators, and counterfactual interventions.
 - A serializable backend service that composes weather, radar and drainage evidence for a private client.
+- Authorized CMA radar adapter with JSON/NPY/NPZ parsing, download-envelope support, cache age limits, and provenance.
+- Changchun drainage adapter for authorized CSV/JSON/GeoJSON exports with Chinese field mapping and explicit depth units.
+- Source-aware runtime response that separates live, cached, synthetic, and unavailable data.
 - Event-level evaluation protocol that avoids random time-slice leakage.
 - Offline deterministic data path so the research workflow remains reproducible without network access.
 
@@ -83,12 +86,22 @@ src/agent/             provider-bound realtime weather Agent
 src/radar/             4-D radar voxel summaries and nowcast
 src/drainage/          runoff, storage and counterfactual simulation
 src/service/           unified backend risk orchestration
+src/ingest/            authorized CMA radar and Changchun drainage adapters
+configs/live_sources.example.env runtime configuration template without secrets
 docs/BACKEND_MODULES.md backend module contracts and usage
+docs/DATA_ACCESS.md    official data access and provenance boundaries
 tests/                 offline backend acceptance tests
+tests/test_live_adapters.py live-source contract tests
 .gitignore             release hygiene and generated-file rules
 ```
 
 The public drop intentionally omits the Streamlit frontend entrypoint and local-only presentation assets.
+
+## Live data deployment
+
+The backend is ready for a real-time deployment when the account-specific data permissions are available. Set the variables in `configs/live_sources.example.env`, then call `RealtimeRiskService.from_environment()`. The CMA adapter expects the endpoint and file URL contract issued by the authenticated CMA data service. The Changchun adapter expects an authorized municipal or Jilin public-data feed/export in CSV, JSON, or GeoJSON format.
+
+Every run returns `sources` with `is_live`, `label_quality`, retrieval time, cache age, and safe provenance. If a source is missing, malformed, expired, or unavailable, the service marks it and falls back to the research baseline; it never relabels synthetic data as a live observation. See [docs/DATA_ACCESS.md](docs/DATA_ACCESS.md) for the official access boundaries.
 
 ## References and inspirations
 
