@@ -84,6 +84,7 @@ src/radar/             4-D radar voxel summaries and nowcast
 src/drainage/          runoff, storage and counterfactual simulation
 src/service/           unified backend risk orchestration
 docs/BACKEND_MODULES.md backend module contracts and usage
+tests/                 offline backend acceptance tests
 .gitignore             release hygiene and generated-file rules
 ```
 
