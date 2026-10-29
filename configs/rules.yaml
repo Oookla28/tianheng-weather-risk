@@ -1,0 +1,51 @@
+# 天衡 · 风险分级、行动规则与评价权重
+# 所有阈值都在答辩前固定，不允许在测试集上回调；改动需记录版本号。
+
+risk_levels:
+  version: risk-level-rules-v1
+  bins: [0.00, 0.35, 0.60, 0.80, 1.01]
+  labels: ["低", "中", "高", "极高"]
+
+decision:
+  # 固定阈值规则（用于对照实验，不代表推荐策略）
+  fixed_threshold:
+    p50: 0.60
+    criticality_min: 0.60
+  # 风险感知（稳健）策略的参数
+  robust:
+    cvar_alpha: 0.70          # 使用 P50..P90 之间的 CVaR 口径刻画尾部风险
+    risk_weight: 1.00
+    cost_weight: 0.35
+    response_weight: 0.25
+
+action_rules:
+  hospital: 重点保障
+  school: 排水巡查
+  road: 临时管控
+  drainage_point: 排水调度
+  default: 巡检
+
+# PlanValidator 的硬约束
+validator:
+  shift_minutes: 240
+  response_window_minutes: 180
+  max_road_closures: 3
+  min_accept_confidence: 0.45
+  require_road_reachability: true
+
+# 行动风险效用 Actionable Risk Utility（ARU）
+# 权重必须事前固定，并由气象/应急/城管人员确认后才能用于正式结论。
+utility:
+  version: aru-weights-v1
+  recovered_weight: 1.00        # 关键设施加权召回收益
+  false_alarm_cost: 0.35        # 误报成本
+  patrol_distance_cost: 0.02    # 每公里巡检成本
+  resource_cost: 0.10           # 每单位资源占用成本
+  exposure_reduction_weight: 0.60
+
+knowledge_base:
+  path: configs/knowledge_base.json
+  top_k: 3
+
+evidence:
+  required_fields: [event_id, run_id, data_version, model_version, created_at]
