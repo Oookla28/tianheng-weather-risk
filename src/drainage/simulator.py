@@ -93,6 +93,7 @@ class DrainageSimulator:
         rainfall_mm: np.ndarray | list[float],
         impervious_ratio: float | np.ndarray = 0.65,
         scenarios: Mapping[str, Mapping[str, Any]] | None = None,
+        initial_storage_mm: float = 0.0,
     ) -> dict[str, DrainageResult]:
         """Run baseline plus named interventions with identical rainfall."""
 
@@ -110,6 +111,7 @@ class DrainageSimulator:
                 rain,
                 impervious_ratio,
                 capacity_multiplier=float(settings.get("capacity_multiplier", 1.0)),
+                initial_storage_mm=float(initial_storage_mm),
                 intervention={"name": name, **dict(settings)},
             )
         return output
