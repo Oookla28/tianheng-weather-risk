@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.env
+.env.*
+.DS_Store
+# data and generated artifacts
+data/cache/
+artifacts/*.tar.gz
+*.log
