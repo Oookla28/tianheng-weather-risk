@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tianheng-weather-impact"
 version = "0.1.0"
-description = "天衡：城市暴雨影响预报与不确定性决策系统"
+description = "Tianheng AI Weather Impact: urban weather-risk intelligence and uncertainty-aware decision support"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
