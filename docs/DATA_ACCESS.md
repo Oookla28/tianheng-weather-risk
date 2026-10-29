@@ -12,9 +12,12 @@ requires personal or institutional real-name access.
 For quantitative use, obtain the account-specific file-information endpoint or
 SDK credentials from the logged-in CMA data service. The service may first
 return a file URL; the client then downloads and validates the file. The
-`CmaRadarAdapter` accepts a JSON envelope with `values`/`reflectivity`, a JSON
-envelope containing a download URL, or an NPY/NPZ volume. It records the product,
-endpoint without query secrets, retrieval time, shape, and `label_quality`.
+`CmaRadarAdapter` accepts a JSON envelope with `values`/`reflectivity`, a CMA
+file-information envelope (`DS`/`fileInfos` with `FILE_URL`), or an NPY/NPZ
+volume. Set `CMA_RADAR_DATA_CODE`, `CMA_RADAR_TIME_RANGE`, and optionally
+`CMA_RADAR_STATION_IDS` when the account endpoint follows the official
+`getRadaFileByTimeRange` contract. It records the product, endpoint without
+query secrets, retrieval time, shape, and `label_quality`.
 
 The public NMC radar webpage is useful for a human visual check, but it is not
 used as an undocumented production scraper. This keeps the project within the
