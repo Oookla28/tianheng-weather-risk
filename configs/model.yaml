@@ -1,0 +1,40 @@
+# 天衡 · 模型与训练配置
+# 说明：离线竞赛环境中不保证 GPU 与 PyTorch，因此主模型采用
+# 梯度提升树（LightGBM 可用时优先，否则使用 sklearn HistGradientBoosting），
+# 时空卷积作为 ConvLSTM 的轻量可复现近似，两者都在本文件的开关内。
+
+risk_model:
+  impl: auto            # auto | lightgbm | hist_gradient_boosting
+  max_iter: 240
+  learning_rate: 0.06
+  max_leaf_nodes: 31
+  min_samples_leaf: 12
+  l2_regularization: 1.0
+  seeds: [42, 2024, 7]
+
+rainfall_model:
+  horizons_steps: [1, 2, 3, 4]   # 未来 30 / 60 / 90 / 120 分钟
+  history_steps: 8               # 过去 4 小时
+  mlp_hidden: [64, 32]
+  csi_threshold_mm: 0.6          # 30 分钟累计 ≥0.6mm 记为有雨（CSI/POD/FAR 口径）
+
+calibration:
+  method: isotonic               # isotonic | platt | none
+  conformal_alpha: 0.20          # 80% 预测区间
+  reliability_bins: 10
+
+splits:
+  strategy: event_level          # 必须按完整事件划分，禁止随机切时间片
+  train_ratio: 0.58
+  val_ratio: 0.25
+  test_ratio: 0.17
+
+labels:
+  weak_label_threshold: 0.50     # 透明弱标签的二值化阈值
+  verified_fractions: [0.10, 0.25, 0.50]
+  semi_supervised_weight: 0.35   # 弱标签样本的等效权重
+
+experiments:
+  matrix: [A, B, C, D, E, F, G]
+  bootstrap_samples: 500
+  bootstrap_seed: 20240701
