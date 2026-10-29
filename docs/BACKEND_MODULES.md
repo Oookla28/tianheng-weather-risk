@@ -56,6 +56,8 @@ Configure the authorised feeds at runtime:
 export CMA_RADAR_ENDPOINT='https://<authorised-cma-endpoint>'
 export CMA_RADAR_TOKEN='<runtime-secret>'
 export CMA_RADAR_PRODUCT='reflectivity'
+export CMA_RADAR_DATA_CODE='J.0019.0010.S001'
+export CMA_RADAR_TIME_RANGE='(20261030000000,20261030000600]'
 export CHANGCHUN_DRAINAGE_ENDPOINT='https://<authorised-changchun-feed>'
 export CHANGCHUN_DRAINAGE_TOKEN='<runtime-secret>'
 export CHANGCHUN_DRAINAGE_DEPTH_UNIT='cm'
