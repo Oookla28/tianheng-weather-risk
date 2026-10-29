@@ -36,6 +36,10 @@ The codebase keeps data, model, decision, provenance, and presentation layers se
 - Terrain-derived susceptibility features including slope, flow accumulation, depression depth, impervious surface, and distance to water.
 - Urban drainage screening and counterfactual comparisons for earlier response, rainfall changes, resource limits, and road closures.
 - Constraint-aware action planning with transparent reasons and evidence records.
+- Provider-bound realtime Agent with live Open-Meteo context, deterministic offline fallback, and provenance flags.
+- Four-dimensional radar voxel contract `(time, height, y, x)` with convective-core summaries and advection nowcast.
+- Urban drainage digital twin baseline with storage, overflow, flooded-area indicators, and counterfactual interventions.
+- A serializable backend service that composes weather, radar and drainage evidence for a private client.
 - Event-level evaluation protocol that avoids random time-slice leakage.
 - Offline deterministic data path so the research workflow remains reproducible without network access.
 
@@ -75,6 +79,11 @@ requirements.txt       runtime and test dependencies
 configs/               city, model, rule, and knowledge-base configuration
 src/common/            data contracts, provenance, IO, and versioning
 src/preprocess/        terrain and grid-derived features
+src/agent/             provider-bound realtime weather Agent
+src/radar/             4-D radar voxel summaries and nowcast
+src/drainage/          runoff, storage and counterfactual simulation
+src/service/           unified backend risk orchestration
+docs/BACKEND_MODULES.md backend module contracts and usage
 .gitignore             release hygiene and generated-file rules
 ```
 
