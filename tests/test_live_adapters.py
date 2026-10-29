@@ -2,6 +2,8 @@
 
 import json
 
+import numpy as np
+
 
 from src.ingest.changchun_drainage import (
     ChangchunDrainageAdapter,
@@ -39,6 +41,17 @@ def test_cma_json_and_cache(tmp_path):
     cached = offline.fetch_latest(43.88, 125.32)
     assert cached.source == "cma-cache"
     assert cached.is_live is False
+
+
+def test_cma_file_information_envelope(tmp_path):
+    product = tmp_path / "product.npy"
+    np.save(product, np.asarray([[12, 25], [35, 48]], dtype=np.float32))
+    envelope = tmp_path / "file_info.json"
+    envelope.write_text(json.dumps({"DS": [{"FILE_URL": product.as_uri()}]}), encoding="utf-8")
+    adapter = CmaRadarAdapter(CmaRadarConfig(endpoint=envelope.as_uri(), cache_dir=str(tmp_path / "cache")))
+    result = adapter.fetch_latest(43.88, 125.32, allow_cache=False)
+    assert result.is_live is True
+    assert result.cube.shape == (1, 1, 2, 2)
 
 
 def test_changchun_geojson_and_service_integration(tmp_path):
