@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -53,10 +54,11 @@ def _inject_styles() -> None:
         """
         <style>
         :root { --ink:#e7eefb; --muted:#8fa4c4; --line:#203452; }
-        .stApp { background:radial-gradient(circle at 15% 0%,#132747 0,#081221 43%,#060c16 100%); color:var(--ink); }
+        html, body, [class*="css"], .stApp, .stApp * { font-family:"SimSun","宋体","Songti SC",serif !important; }
+        .stApp { background:radial-gradient(circle at 15% 0%,#132747 0,#081221 43%,#060c16 100%); color:var(--ink); min-height:100vh; }
         [data-testid="stHeader"] { background:rgba(4,10,20,.7); }
         [data-testid="stSidebar"] { background:#081221; border-right:1px solid var(--line); }
-        .block-container { max-width:1500px; padding-top:1.5rem; padding-bottom:2rem; }
+        .block-container { max-width:1800px; padding-top:.75rem; padding-bottom:1.25rem; }
         h1 { font-size:2.2rem !important; }
         h2 { font-size:1.45rem !important; }
         h3 { font-size:1.05rem !important; color:#cfe0f8; }
@@ -79,9 +81,22 @@ def _inject_styles() -> None:
         .panel-title { color:#d9e8fb; font-size:.9rem; font-weight:700; margin-bottom:.65rem; }
         .mini-label { color:var(--muted); font-size:.72rem; }
         .mini-value { color:#e9f3ff; font-weight:700; font-size:1.05rem; }
+        .number-pulse { animation:numberPulse 2.2s ease-in-out infinite; }
+        @keyframes numberPulse { 0%,100% { filter:brightness(1); transform:translateY(0); } 50% { filter:brightness(1.25); transform:translateY(-1px); } }
         .callout { border-left:3px solid #56b6ff; background:rgba(25,65,103,.28); padding:.65rem .8rem; border-radius:0 10px 10px 0; color:#c8dcf5; font-size:.82rem; }
         .warning-callout { border-left-color:#fb923c; background:rgba(131,64,21,.2); }
         .audit { color:#8298b7; font-size:.7rem; border-top:1px solid var(--line); padding-top:.7rem; margin-top:1rem; }
+        .timeline { position:relative; display:flex; justify-content:space-between; gap:0; padding:1rem .4rem .35rem; margin:.2rem 0 .9rem; }
+        .timeline:before { content:""; position:absolute; left:5%; right:5%; top:1.55rem; height:2px; background:linear-gradient(90deg,#4ade80 0 58%,#facc15 58% 78%,#334c6e 78%); }
+        .timeline-item { position:relative; z-index:1; width:23%; text-align:center; color:#a6bbd8; font-size:.72rem; }
+        .timeline-dot { width:.72rem; height:.72rem; border-radius:50%; margin:0 auto .42rem; background:#334c6e; border:2px solid #6f86a5; }
+        .timeline-item.done .timeline-dot { background:#4ade80; border-color:#b9f6cd; box-shadow:0 0 12px #4ade80; }
+        .timeline-item.active .timeline-dot { background:#facc15; border-color:#fff1a6; box-shadow:0 0 14px #facc15; animation:numberPulse 1.8s infinite; }
+        .timeline-label { color:#dceaff; font-size:.8rem; font-weight:700; }
+        .timeline-time { color:#8298b7; font-size:.66rem; margin-top:.16rem; }
+        .map-shell { border:1px solid #29496d; border-radius:16px; overflow:hidden; background:#0a1527; }
+        .layer-bar { display:flex; gap:.45rem; flex-wrap:wrap; padding:.55rem .7rem; border:1px solid var(--line); border-radius:12px; background:rgba(10,21,39,.85); margin-bottom:.65rem; }
+        .flow-key { color:#7dd3fc; font-size:.72rem; letter-spacing:.02em; }
         div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
         </style>
         """,
@@ -105,7 +120,7 @@ def _source_frame(sources: dict[str, Any]) -> pd.DataFrame:
 
 
 def _metric_card(label: str, value: str, detail: str = "", colour: str = "#e7eefb") -> None:
-    st.markdown(f"<div class='panel' style='padding:.78rem .9rem'><div class='mini-label'>{label}</div><div class='mini-value' style='color:{colour}'>{value}</div><div class='mini-label'>{detail}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='panel' style='padding:.68rem .82rem'><div class='mini-label'>{label}</div><div class='mini-value number-pulse' style='color:{colour}'>{value}</div><div class='mini-label'>{detail}</div></div>", unsafe_allow_html=True)
 
 
 def _radar_cube(payload: dict[str, Any], latitude: float, longitude: float) -> RadarVoxelCube | None:
@@ -118,6 +133,102 @@ def _radar_figure(cube: RadarVoxelCube, frame_index: int) -> go.Figure:
     frame = cube.values[frame_index, 0]
     fig = go.Figure(go.Heatmap(z=frame, colorscale=[[0, "#091425"], [.18, "#155e75"], [.42, "#22c55e"], [.65, "#facc15"], [.82, "#fb923c"], [1, "#fb7185"]], zmin=0, zmax=70, colorbar={"title": "dBZ", "thickness": 12}, hovertemplate="网格 x=%{x}<br>网格 y=%{y}<br>反射率=%{z:.1f} dBZ<extra></extra>"))
     fig.update_layout(height=470, margin={"l":12, "r":12, "t":12, "b":12}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis={"title":"网格 x", "showgrid":False}, yaxis={"title":"网格 y", "autorange":"reversed", "showgrid":False})
+    return fig
+
+
+def _demo_layers(latitude: float, longitude: float) -> dict[str, Any]:
+    """Create transparent demo GIS layers around the selected point.
+
+    The basemap is real OpenStreetMap.  These overlays are deliberately marked
+    as demo layers until authorised city GeoJSON feeds are connected.
+    """
+    boundary = [
+        (latitude - .018, longitude - .025),
+        (latitude + .014, longitude - .028),
+        (latitude + .022, longitude + .018),
+        (latitude - .010, longitude + .030),
+        (latitude - .018, longitude - .025),
+    ]
+    roads = []
+    for index, offset in enumerate((-.014, -.004, .008, .018)):
+        roads.append({"name": f"主干道 {index + 1}", "lat": [latitude - .025, latitude + .025], "lon": [longitude + offset - .01, longitude + offset + .015]})
+    roads.extend([
+        {"name": "环城路", "lat": [latitude - .014, latitude + .016, latitude + .021], "lon": [longitude - .025, longitude + .002, longitude + .025]},
+        {"name": "滨河路", "lat": [latitude - .020, latitude - .004, latitude + .020], "lon": [longitude - .028, longitude - .004, longitude + .023]},
+    ])
+    hospitals = [
+        {"name": "市中心医院", "lat": latitude + .006, "lon": longitude - .008, "risk": "高"},
+        {"name": "北城医院", "lat": latitude + .016, "lon": longitude + .016, "risk": "中"},
+        {"name": "滨河急救中心", "lat": latitude - .013, "lon": longitude + .011, "risk": "中"},
+    ]
+    flows = [
+        {"lat": [latitude - .012, latitude - .003, latitude + .008], "lon": [longitude - .020, longitude - .008, longitude + .004]},
+        {"lat": [latitude + .022, latitude + .015, latitude + .008], "lon": [longitude - .020, longitude - .005, longitude + .013]},
+    ]
+    return {"boundary": boundary, "roads": roads, "hospitals": hospitals, "flows": flows}
+
+
+def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, show_radar: bool, show_admin: bool, show_roads: bool, show_hospitals: bool, show_flow: bool) -> go.Figure:
+    """Build a real basemap with switchable demo operational layers."""
+    layers = _demo_layers(latitude, longitude)
+    fig = go.Figure()
+    cube = _radar_cube(payload, latitude, longitude)
+    if show_radar and cube is not None:
+        frame = cube.values[-1, 0]
+        rows, cols = frame.shape
+        radar_lat, radar_lon, radar_value = [], [], []
+        lat_scale = 1000 / 111_000
+        lon_scale = lat_scale / max(0.25, np.cos(np.deg2rad(latitude)))
+        for y in range(0, rows, 2):
+            for x in range(0, cols, 2):
+                radar_lat.append(latitude + (rows / 2 - y) * lat_scale)
+                radar_lon.append(longitude + (x - cols / 2) * lon_scale)
+                radar_value.append(float(frame[y, x]))
+        fig.add_trace(go.Scattermap(lat=radar_lat, lon=radar_lon, mode="markers", name="雷达回波（演示）", marker={"size": 10, "color": radar_value, "colorscale": [[0, "#12304b"], [.35, "#22c55e"], [.62, "#facc15"], [.82, "#fb923c"], [1, "#fb7185"]], "cmin": 0, "cmax": 70, "opacity": .46, "colorbar": {"title": "dBZ"}}, hovertemplate="反射率 %{marker.color:.1f} dBZ<extra></extra>"))
+    if show_admin:
+        boundary = layers["boundary"]
+        fig.add_trace(go.Scattermap(lat=[item[0] for item in boundary], lon=[item[1] for item in boundary], mode="lines", name="行政区边界（演示）", line={"width": 3, "color": "#60a5fa"}, hoverinfo="skip"))
+    if show_roads:
+        for road in layers["roads"]:
+            fig.add_trace(go.Scattermap(lat=road["lat"], lon=road["lon"], mode="lines", name=road["name"], line={"width": 2, "color": "#9fb7d5"}, hovertemplate=f"{road['name']}<extra></extra>", showlegend=False))
+    if show_hospitals:
+        fig.add_trace(go.Scattermap(lat=[item["lat"] for item in layers["hospitals"]], lon=[item["lon"] for item in layers["hospitals"]], mode="markers+text", name="医院", text=[item["name"] for item in layers["hospitals"]], textposition="top center", marker={"size": 13, "color": [RISK_COLOURS[item["risk"]] for item in layers["hospitals"]]}, hovertemplate="%{text}<extra></extra>"))
+    if show_flow:
+        phase = int(pd.Timestamp.now().timestamp() * 2) % 2
+        for index, flow in enumerate(layers["flows"]):
+            lat_values = flow["lat"] if phase == 0 or index == 0 else list(reversed(flow["lat"]))
+            lon_values = flow["lon"] if phase == 0 or index == 0 else list(reversed(flow["lon"]))
+            fig.add_trace(go.Scattermap(lat=lat_values, lon=lon_values, mode="lines+markers", name="汇流方向", line={"width": 3, "color": "#22d3ee"}, marker={"size": 8, "color": "#67e8f9"}, hovertemplate="地表汇流方向（演示）<extra></extra>", showlegend=index == 0))
+    fig.add_trace(go.Scattermap(lat=[latitude], lon=[longitude], mode="markers+text", name="当前研判点", text=["当前研判点"], textposition="bottom center", marker={"size": 16, "color": "#f8fafc", "allowoverlap": True}, hovertemplate="当前研判点<extra></extra>"))
+    fig.update_layout(
+        height=610,
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        map={"style": "open-street-map", "center": {"lat": latitude, "lon": longitude}, "zoom": 11.2},
+        legend={"orientation": "h", "y": .02, "x": .02, "bgcolor": "rgba(4,12,24,.76)", "font": {"color": "#dceaff", "size": 10}},
+    )
+    return fig
+
+
+def _warning_timeline() -> None:
+    st.markdown(
+        """
+        <div class='timeline'>
+          <div class='timeline-item done'><div class='timeline-dot'></div><div class='timeline-label'>趋势提示</div><div class='timeline-time'>08:00 · 已完成</div></div>
+          <div class='timeline-item done'><div class='timeline-dot'></div><div class='timeline-label'>灾害提醒</div><div class='timeline-time'>09:30 · 已完成</div></div>
+          <div class='timeline-item active'><div class='timeline-dot'></div><div class='timeline-label'>预警研判</div><div class='timeline-time'>当前 · 待会商</div></div>
+          <div class='timeline-item'><div class='timeline-dot'></div><div class='timeline-label'>正式发布</div><div class='timeline-time'>未发布</div></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _three_d_figure(cube: RadarVoxelCube) -> go.Figure:
+    values = cube.values[-1]
+    z, y, x = np.indices(values.shape)
+    fig = go.Figure(go.Isosurface(x=x.reshape(-1), y=y.reshape(-1), z=z.reshape(-1), value=values.reshape(-1), isomin=34, isomax=72, surface_count=3, colorscale=[[0, "#155e75"], [.45, "#22c55e"], [.72, "#facc15"], [1, "#fb7185"]], caps={"x": {"show": False}, "y": {"show": False}, "z": {"show": False}}, opacity=.72, hovertemplate="x=%{x}<br>y=%{y}<br>高度层=%{z}<br>反射率=%{value:.1f} dBZ<extra></extra>"))
+    fig.update_layout(height=390, margin={"l": 0, "r": 0, "t": 10, "b": 0}, paper_bgcolor="rgba(0,0,0,0)", scene={"xaxis": {"title": "网格 x", "color": "#9fb7d5"}, "yaxis": {"title": "网格 y", "color": "#9fb7d5"}, "zaxis": {"title": "高度层", "color": "#9fb7d5"}, "bgcolor": "rgba(0,0,0,0)"}, showlegend=False)
     return fig
 
 
@@ -134,52 +245,70 @@ def _render_header(payload: dict[str, Any], offline: bool) -> None:
 
 def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float) -> None:
     risk, snapshot, impact = payload["risk"], payload["risk"]["snapshot"], payload["impact"]
-    level, colour = risk.get("risk_level", "未知"), _risk_colour(risk.get("risk_level", "未知"))
-    st.markdown("## 值班驾驶舱")
-    st.caption("现在发生什么 → 未来如何变化 → 会影响什么 → 数据是否可信 → 下一步动作")
-    hero, metrics = st.columns([1.05, 1.95])
-    with hero:
-        st.markdown(f"<div class='hero' style='--risk-colour:{colour}'><div class='hero-label'>模型风险 · 当前点位</div><div class='hero-level'>{level}</div><div class='hero-number'>{risk.get('risk_probability', 0):.1%} <span style='font-size:.78rem;color:#abc0db'>概率 · 置信度 {risk.get('confidence', 0):.1%}</span></div><div class='hero-note'>{'、'.join(risk.get('main_reasons', []))}</div></div>", unsafe_allow_html=True)
-    with metrics:
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            _metric_card("当前降水", f"{snapshot.get('precipitation_mm', 0):.1f} mm", "天气快照")
-            _metric_card("降水概率", f"{snapshot.get('precipitation_probability', 0):.1%}", "当前小时")
-        with m2:
-            _metric_card("峰值溢流", f"{impact.get('peak_overflow_mm', 0):.1f} mm", "基线情景")
-            _metric_card("模型淹没面积", f"{impact.get('flooded_area_fraction', 0):.1%}", "筛查结果")
-        with m3:
-            _metric_card("风速", f"{snapshot.get('wind_speed_kmh', 0):.1f} km/h", "10m 风")
-            _metric_card("湿度", f"{snapshot.get('humidity_percent', 0):.1f}%", "相对湿度")
-    st.markdown("### 监测地图与影响判断")
-    map_col, side_col = st.columns([1.6, 1])
+    level = risk.get("risk_level", "未知")
+    cube = _radar_cube(payload, latitude, longitude)
+    st.markdown("## 城市气象灾害值班总览")
+    st.caption("实时监测 · 影响研判 · 预警流程 · 联动处置")
+
+    metric_cols = st.columns(5)
+    with metric_cols[0]:
+        _metric_card("官方预警", "暂无", "当前未接入发布平台", "#4ade80")
+    with metric_cols[1]:
+        _metric_card("模型风险", level, f"概率 {risk.get('risk_probability', 0):.1%}", _risk_colour(level))
+    with metric_cols[2]:
+        _metric_card("雷达对流", f"{payload.get('radar', {}).get('convective_score', 0):.3f}", "当前体素评分", "#7dd3fc")
+    with metric_cols[3]:
+        _metric_card("峰值溢流", f"{impact.get('peak_overflow_mm', 0):.1f} mm", "基线排水情景", "#fb923c")
+    with metric_cols[4]:
+        _metric_card("置信度", f"{risk.get('confidence', 0):.1%}", "天气数据快照", "#c4b5fd")
+
+    st.markdown("### 预警进程")
+    _warning_timeline()
+
+    layer_cols = st.columns(6)
+    with layer_cols[0]:
+        show_radar = st.toggle("雷达回波", value=True, key="home_radar")
+    with layer_cols[1]:
+        show_admin = st.toggle("行政区", value=True, key="home_admin")
+    with layer_cols[2]:
+        show_roads = st.toggle("道路", value=True, key="home_roads")
+    with layer_cols[3]:
+        show_hospitals = st.toggle("医院", value=True, key="home_hospitals")
+    with layer_cols[4]:
+        show_flow = st.toggle("汇流动画", value=True, key="home_flow")
+    with layer_cols[5]:
+        show_3d = st.toggle("三维对流体", value=False, key="home_3d")
+
+    map_col, status_col = st.columns([2.35, .85])
     with map_col:
-        cube = _radar_cube(payload, latitude, longitude)
-        if cube is not None:
-            st.plotly_chart(_radar_figure(cube, len(cube.timestamps) - 1), use_container_width=True, config={"displaylogo": False})
-            st.caption("合成雷达网格示意 · 不是城市级实况风险场 · 选择雷达与短临页查看时间轴")
-        else:
-            st.info("当前雷达源未返回原始体素值。生产前端应接入独立雷达栅格接口后显示地图。")
-        st.markdown("<div class='callout warning-callout'><b>官方预警：暂无接入</b><br>模型风险仅用于内部研判，不等同于红/橙/黄/蓝气象预警。</div>", unsafe_allow_html=True)
-    with side_col:
-        st.markdown("<div class='panel'><div class='panel-title'>影响与处置状态</div>", unsafe_allow_html=True)
-        st.metric("综合影响等级", impact.get("risk_level", "未知"))
-        st.metric("模型排水等级", impact.get("model_risk_level", "未知"))
-        drainage_source = payload.get("sources", {}).get("drainage", {})
-        if drainage_source.get("source") == "no-configured-feed":
-            st.warning("暂无授权市政排水观测；观测水深不可解释为 0。")
-        else:
-            st.metric("观测最大水深", f"{impact.get('observed_water_depth_mm', 0):.1f} mm")
-        st.markdown("<div class='mini-label'>当前服务范围</div><div class='mini-value'>单点研判</div><br><div class='mini-label'>资产接口</div><div class='mini-value'>未接入</div></div>", unsafe_allow_html=True)
-    reasons_col, audit_col = st.columns([1.1, 1])
-    with reasons_col:
+        st.markdown("<div class='map-shell'>", unsafe_allow_html=True)
+        st.plotly_chart(_map_figure(payload, latitude, longitude, show_radar=show_radar, show_admin=show_admin, show_roads=show_roads, show_hospitals=show_hospitals, show_flow=show_flow), use_container_width=True, config={"displaylogo": False, "scrollZoom": True})
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.caption("真实 OpenStreetMap 底图；行政区、道路、医院和汇流为演示图层，接入授权 GIS 后替换。")
+    with status_col:
+        st.markdown("<div class='panel'><div class='panel-title'>值班状态</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='hero-label'>当前模型风险</div><div class='hero-level' style='font-size:2.2rem;--risk-colour:{_risk_colour(level)}'>{level}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='mini-label'>降水 / 风速</div><div class='mini-value'>{snapshot.get('precipitation_mm', 0):.1f} mm · {snapshot.get('wind_speed_kmh', 0):.1f} km/h</div>", unsafe_allow_html=True)
+        st.markdown("<hr style='border-color:#203452'>", unsafe_allow_html=True)
+        st.markdown("<div class='panel-title'>重点对象</div>", unsafe_allow_html=True)
+        for name, value in (("市中心医院", "优先巡查"), ("滨河路", "关注积水"), ("排水泵站", "待接入")):
+            st.markdown(f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #203452;padding:.48rem 0'><span class='mini-label'>{name}</span><span style='color:#facc15;font-size:.75rem'>{value}</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='callout warning-callout' style='margin-top:.75rem'><b>官方预警：未接入</b><br>模型风险不等于红/橙/黄/蓝预警。</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    if show_3d and cube is not None:
+        st.markdown("### 三维对流体")
+        st.plotly_chart(_three_d_figure(cube), use_container_width=True, config={"displaylogo": False})
+        st.caption("三维视图展示当前演示雷达体素的对流结构，生产环境应使用授权三维雷达产品。")
+
+    bottom_left, bottom_right = st.columns([1.15, 1])
+    with bottom_left:
         st.markdown("### 研判依据")
-        for reason in risk.get("main_reasons", []):
-            st.markdown(f"- {reason}")
+        st.markdown(" · ".join(risk.get("main_reasons", [])))
         st.caption("模型方法：" + str(risk.get("evidence", {}).get("method", "unknown")))
-    with audit_col:
-        st.markdown("### 运行审计")
-        st.json({"location": payload.get("location"), "official_warning": risk.get("evidence", {}).get("official_warning", False), "radar_source": payload.get("radar", {}).get("source")}, expanded=False)
+    with bottom_right:
+        st.markdown("### 数据健康")
+        st.markdown(" ".join(_quality_badge(value) for value in payload.get("sources", {}).values()), unsafe_allow_html=True)
 
 
 def _render_radar(payload: dict[str, Any], latitude: float, longitude: float) -> None:
@@ -276,7 +405,7 @@ def main() -> None:
     _inject_styles()
     st.sidebar.markdown("## 天衡研判台")
     st.sidebar.caption("城市暴雨与内涝 · 内部决策支持")
-    page = st.sidebar.radio("工作台", ["值班驾驶舱", "雷达与短临", "内涝排水情景", "影响与资产", "数据质量与证据"], label_visibility="collapsed")
+    page = st.sidebar.radio("工作台", ["值班总览", "雷达与短临", "内涝排水情景", "影响与资产", "数据质量与证据"], label_visibility="collapsed")
     st.sidebar.divider()
     offline = st.sidebar.toggle("离线演示模式", value=True, help="开启后不请求外部服务，并将结果明确标记为 SYNTHETIC。")
     latitude = st.sidebar.number_input("纬度", value=43.88, min_value=-90.0, max_value=90.0, format="%.5f")
@@ -287,7 +416,7 @@ def main() -> None:
     with st.spinner("正在生成研判结果…"):
         payload = _run(float(latitude), float(longitude), offline)
     _render_header(payload, offline)
-    if page == "值班驾驶舱": _render_cockpit(payload, float(latitude), float(longitude))
+    if page == "值班总览": _render_cockpit(payload, float(latitude), float(longitude))
     elif page == "雷达与短临": _render_radar(payload, float(latitude), float(longitude))
     elif page == "内涝排水情景": _render_drainage(payload)
     elif page == "影响与资产": _render_assets(payload)
