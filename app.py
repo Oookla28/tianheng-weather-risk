@@ -10,6 +10,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:  # pragma: no cover - optional until requirements are installed
+    st_autorefresh = None
+
 from src.agent.realtime import RealtimeWeatherAgent, WeatherSnapshot, deterministic_fallback
 from src.radar.voxel import RadarVoxelCube
 from src.service.risk_pipeline import RealtimeRiskService
@@ -237,14 +242,16 @@ def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, s
     return fig
 
 
-def _warning_timeline() -> None:
+def _warning_timeline(warnings: list[dict[str, Any]] | None = None) -> None:
+    final_label = f"已发布 · {len(warnings)} 条" if warnings else "未发布"
+    final_time = "CMA公开预警" if warnings else "等待正式发布"
     st.markdown(
-        """
+        f"""
         <div class='timeline'>
           <div class='timeline-item done'><div class='timeline-dot'></div><div class='timeline-label'>趋势提示</div><div class='timeline-time'>08:00 · 已完成</div></div>
           <div class='timeline-item done'><div class='timeline-dot'></div><div class='timeline-label'>灾害提醒</div><div class='timeline-time'>09:30 · 已完成</div></div>
           <div class='timeline-item active'><div class='timeline-dot'></div><div class='timeline-label'>预警研判</div><div class='timeline-time'>当前 · 待会商</div></div>
-          <div class='timeline-item'><div class='timeline-dot'></div><div class='timeline-label'>正式发布</div><div class='timeline-time'>未发布</div></div>
+          <div class='timeline-item {'done' if warnings else ''}'><div class='timeline-dot'></div><div class='timeline-label'>正式发布</div><div class='timeline-time'>{final_label} · {final_time}</div></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -263,7 +270,7 @@ def _render_header(payload: dict[str, Any], offline: bool, public: dict[str, Any
     location = payload.get("location", {})
     badge_sources = list(payload.get("sources", {}).values())
     if public:
-        badge_sources.extend(public.get(name, {}) for name in ("weather", "osm", "geocode"))
+        badge_sources.extend(public.get(name, {}) for name in ("weather", "osm", "geocode", "warnings"))
     badge_html = "".join(_quality_badge(value) for value in badge_sources if value)
     mode = "离线演示" if offline else "授权源运行"
     place = ((public or {}).get("geocode", {}).get("data") or {}).get("display_name", "")
@@ -279,12 +286,19 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
     risk, snapshot, impact = payload["risk"], payload["risk"]["snapshot"], payload["impact"]
     level = risk.get("risk_level", "未知")
     cube = _radar_cube(payload, latitude, longitude)
+    warnings = ((public or {}).get("warnings", {}).get("data") or {}).get("warnings", [])
+    warning_rank = {"红色": 4, "橙色": 3, "黄色": 2, "蓝色": 1}
+    highest_warning = max(warnings, key=lambda item: warning_rank.get(item.get("level", ""), 0), default=None)
     st.markdown("## 城市气象灾害值班总览")
     st.caption("实时监测 · 影响研判 · 预警流程 · 联动处置")
 
     metric_cols = st.columns(5)
     with metric_cols[0]:
-        _metric_card("官方预警", "暂无", "当前未接入发布平台", "#4ade80")
+        if highest_warning:
+            warning_colour = {"红色": "#fb7185", "橙色": "#fb923c", "黄色": "#facc15", "蓝色": "#60a5fa"}.get(highest_warning.get("level"), "#e7eefb")
+            _metric_card("官方预警", f"{highest_warning.get('level', '未知')} · {len(warnings)}条", "CMA公开接口", warning_colour)
+        else:
+            _metric_card("官方预警", "暂无", "CMA公开接口", "#4ade80")
     with metric_cols[1]:
         _metric_card("模型风险", level, f"概率 {risk.get('risk_probability', 0):.1%}", _risk_colour(level))
     with metric_cols[2]:
@@ -295,7 +309,7 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
         _metric_card("置信度", f"{risk.get('confidence', 0):.1%}", "天气数据快照", "#c4b5fd")
 
     st.markdown("### 预警进程")
-    _warning_timeline()
+    _warning_timeline(warnings)
 
     layer_cols = st.columns(6)
     with layer_cols[0]:
@@ -330,7 +344,11 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
         hospital_value = "OSM 公开数据" if osm_live and osm_hospitals else ("OSM 当前范围未返回" if osm_live else "演示对象")
         for name, value in (("医院图层", hospital_value), ("道路图层", "OSM 公开数据" if osm_live else "演示道路"), ("排水泵站", "待接入")):
             st.markdown(f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #203452;padding:.48rem 0'><span class='mini-label'>{name}</span><span style='color:#facc15;font-size:.75rem'>{value}</span></div>", unsafe_allow_html=True)
-        st.markdown("<div class='callout warning-callout' style='margin-top:.75rem'><b>官方预警：未接入</b><br>模型风险不等于红/橙/黄/蓝预警。</div>", unsafe_allow_html=True)
+        if warnings:
+            for warning in warnings[:3]:
+                st.markdown(f"<div class='callout warning-callout' style='margin-top:.55rem'><b>{warning.get('level', '未知')} · {warning.get('title', '公开预警')}</b><br>{warning.get('effective', '')}<br>{warning.get('description', '')[:100]}...</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='callout warning-callout' style='margin-top:.75rem'><b>官方预警：暂无</b><br>模型风险不等于红/橙/黄/蓝预警。</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     if show_3d and cube is not None:
@@ -347,7 +365,7 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
         st.markdown("### 数据健康")
         source_values = list(payload.get("sources", {}).values())
         if public:
-            source_values.extend(public.get(name, {}) for name in ("weather", "osm", "geocode"))
+            source_values.extend(public.get(name, {}) for name in ("weather", "osm", "geocode", "warnings"))
         st.markdown(" ".join(_quality_badge(value) for value in source_values if value), unsafe_allow_html=True)
 
     if public:
@@ -462,6 +480,12 @@ def main() -> None:
     st.sidebar.divider()
     offline = st.sidebar.toggle("离线演示模式", value=False, key="offline_mode_v2", help="开启后不请求外部服务，并将结果明确标记为 SYNTHETIC。")
     public_enabled = st.sidebar.toggle("公开数据层", value=True, key="public_data_v1", help="从 Open-Meteo、OpenStreetMap Overpass 和 Nominatim 获取天气、医院、道路、行政区和位置名称。")
+    auto_refresh = st.sidebar.toggle("自动刷新", value=False, key="auto_refresh_v1", help="按设定间隔刷新天气、公开预警和 OSM 数据。")
+    refresh_seconds = st.sidebar.select_slider("刷新间隔", options=[60, 120, 300, 600], value=120, format_func=lambda value: f"{value // 60} 分钟")
+    if auto_refresh and st_autorefresh is not None:
+        st_autorefresh(interval=refresh_seconds * 1000, key="weather_refresh_timer")
+    elif auto_refresh:
+        st.sidebar.warning("自动刷新需要安装 streamlit-autorefresh；当前仍可使用手动刷新。")
     latitude = st.sidebar.number_input("纬度", value=43.88, min_value=-90.0, max_value=90.0, format="%.5f")
     longitude = st.sidebar.number_input("经度", value=125.32, min_value=-180.0, max_value=180.0, format="%.5f")
     if st.sidebar.button("刷新研判", type="primary", use_container_width=True):

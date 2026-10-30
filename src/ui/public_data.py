@@ -8,6 +8,7 @@ backend still owns model risk and authorised CMA/municipal provenance.
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,8 @@ USER_AGENT = "tianheng-weather-impact-ui/0.4 (public-data-demo)"
 OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
 NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/reverse"
 OPEN_METEO_ENDPOINT = "https://api.open-meteo.com/v1/forecast"
+CMA_WARNING_ENDPOINT = "https://weather.cma.cn/api/map/alarm"
+PROVINCE_ADCODE = {"吉林省": "22", "辽宁省": "21", "黑龙江省": "23", "北京市": "11", "天津市": "12", "河北省": "13", "山东省": "37", "江苏省": "32", "浙江省": "33", "上海市": "31"}
 
 
 def _now() -> str:
@@ -87,6 +90,22 @@ def fetch_nominatim(latitude: float, longitude: float) -> dict[str, Any]:
         return _live_result("nominatim", {"display_name": payload.get("display_name", ""), "address": payload.get("address", {})}, license_name="OpenStreetMap Nominatim")
     except Exception as exc:
         return _unavailable("nominatim", f"{type(exc).__name__}: {exc}")
+
+
+def fetch_cma_warnings(adcode: str = "22") -> dict[str, Any]:
+    """Fetch active public warnings from the CMA weather portal map API."""
+    url = CMA_WARNING_ENDPOINT + "?" + urllib.parse.urlencode({"adcode": str(adcode)})
+    try:
+        payload = _get_json(url, timeout=8.0)
+        items = []
+        for item in payload.get("data", []):
+            headline = str(item.get("headline") or item.get("title") or "")
+            match = re.search(r"(蓝色|黄色|橙色|红色)", headline)
+            level = match.group(1) if match else "未知"
+            items.append({"id": item.get("id"), "headline": headline, "title": item.get("title", ""), "description": item.get("description", ""), "effective": item.get("effective", ""), "level": level, "latitude": item.get("latitude"), "longitude": item.get("longitude"), "type": item.get("type", "")})
+        return _live_result("cma-weather-portal", {"adcode": str(adcode), "warnings": items}, license_name="中国气象局天气预报门户")
+    except Exception as exc:
+        return _unavailable("cma-weather-portal", f"{type(exc).__name__}: {exc}")
 
 
 def _parse_overpass(payload: dict[str, Any]) -> dict[str, Any]:
@@ -178,7 +197,11 @@ def fetch_public_bundle(latitude: float, longitude: float) -> dict[str, Any]:
         weather = weather_future.result()
         osm = osm_future.result()
         geocode = geocode_future.result()
-    return {"weather": weather, "osm": osm, "geocode": geocode, "retrieved_at": _now()}
+    address = (geocode.get("data") or {}).get("address", {}) if geocode.get("status") == "LIVE" else {}
+    province = next((value for key, value in address.items() if key in ("state", "province", "region")), "")
+    adcode = next((code for name, code in PROVINCE_ADCODE.items() if name in province), "22")
+    warnings = fetch_cma_warnings(adcode)
+    return {"weather": weather, "osm": osm, "geocode": geocode, "warnings": warnings, "retrieved_at": _now()}
 
 
-__all__ = ["fetch_open_meteo", "fetch_nominatim", "fetch_osm_layers", "fetch_public_bundle"]
+__all__ = ["fetch_open_meteo", "fetch_nominatim", "fetch_osm_layers", "fetch_cma_warnings", "fetch_public_bundle"]

@@ -26,3 +26,9 @@ states. Overpass failures fall back to the small OSM map extract API; if that
 also fails, synthetic demo layers remain visible. OpenStreetMap data is
 attributed under ODbL 1.0. CMA radar web pages are not scraped as quantitative
 radar data.
+
+The public data layer also reads the active public warning list from the CMA
+weather portal map API, shows the highest active warning level and a structured
+warning list, and can refresh automatically with `streamlit-autorefresh`. The
+warning feed is displayed as public reference data; formal warning publication
+and signing remain outside this UI.
