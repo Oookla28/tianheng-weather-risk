@@ -13,6 +13,7 @@ import streamlit as st
 from src.agent.realtime import RealtimeWeatherAgent, WeatherSnapshot, deterministic_fallback
 from src.radar.voxel import RadarVoxelCube
 from src.service.risk_pipeline import RealtimeRiskService
+from src.ui.public_data import fetch_public_bundle
 
 
 RISK_COLOURS = {"极高": "#fb7185", "高": "#fb923c", "中": "#facc15", "低": "#4ade80"}
@@ -30,6 +31,8 @@ def _quality(source: dict[str, Any]) -> str:
         return "LIVE"
     name = str(source.get("source", "")).lower()
     label = str((source.get("provenance") or {}).get("label_quality", "")).lower()
+    if "unavailable" in name or "no-configured" in name or label == "unavailable":
+        return "UNAVAILABLE"
     if "cache" in name or label == "cached":
         return "CACHED"
     if "synthetic" in name or label == "synthetic":
@@ -111,6 +114,12 @@ def _run(latitude: float, longitude: float, offline: bool) -> dict[str, Any]:
     return service.run(latitude, longitude, use_live_sources=not offline)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _public_bundle(latitude: float, longitude: float) -> dict[str, Any]:
+    """Cache public weather/OSM calls for ten minutes to respect service limits."""
+    return fetch_public_bundle(latitude, longitude)
+
+
 def _source_frame(sources: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for name, source in sources.items():
@@ -168,9 +177,16 @@ def _demo_layers(latitude: float, longitude: float) -> dict[str, Any]:
     return {"boundary": boundary, "roads": roads, "hospitals": hospitals, "flows": flows}
 
 
-def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, show_radar: bool, show_admin: bool, show_roads: bool, show_hospitals: bool, show_flow: bool) -> go.Figure:
+def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, show_radar: bool, show_admin: bool, show_roads: bool, show_hospitals: bool, show_flow: bool, public: dict[str, Any] | None = None) -> go.Figure:
     """Build a real basemap with switchable demo operational layers."""
     layers = _demo_layers(latitude, longitude)
+    osm_data = ((public or {}).get("osm", {}).get("data") or {})
+    if osm_data.get("hospitals"):
+        layers["hospitals"] = osm_data["hospitals"]
+    if osm_data.get("roads"):
+        layers["roads"] = osm_data["roads"]
+    if osm_data.get("boundaries"):
+        layers["boundaries"] = osm_data["boundaries"]
     fig = go.Figure()
     cube = _radar_cube(payload, latitude, longitude)
     if show_radar and cube is not None:
@@ -186,8 +202,12 @@ def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, s
                 radar_value.append(float(frame[y, x]))
         fig.add_trace(go.Scattermap(lat=radar_lat, lon=radar_lon, mode="markers", name="雷达回波（演示）", marker={"size": 10, "color": radar_value, "colorscale": [[0, "#12304b"], [.35, "#22c55e"], [.62, "#facc15"], [.82, "#fb923c"], [1, "#fb7185"]], "cmin": 0, "cmax": 70, "opacity": .46, "colorbar": {"title": "dBZ"}}, hovertemplate="反射率 %{marker.color:.1f} dBZ<extra></extra>"))
     if show_admin:
-        boundary = layers["boundary"]
-        fig.add_trace(go.Scattermap(lat=[item[0] for item in boundary], lon=[item[1] for item in boundary], mode="lines", name="行政区边界（演示）", line={"width": 3, "color": "#60a5fa"}, hoverinfo="skip"))
+        if layers.get("boundaries"):
+            for index, boundary_item in enumerate(layers["boundaries"]):
+                fig.add_trace(go.Scattermap(lat=boundary_item["lat"], lon=boundary_item["lon"], mode="lines", name="行政区边界（OSM）" if index == 0 else boundary_item.get("name", "行政区"), line={"width": 3, "color": "#60a5fa"}, hovertemplate=f"{boundary_item.get('name', '行政区')}<extra></extra>", showlegend=index == 0))
+        else:
+            boundary = layers["boundary"]
+            fig.add_trace(go.Scattermap(lat=[item[0] for item in boundary], lon=[item[1] for item in boundary], mode="lines", name="行政区边界（演示）", line={"width": 3, "color": "#60a5fa"}, hoverinfo="skip"))
     if show_roads:
         for road in layers["roads"]:
             fig.add_trace(go.Scattermap(lat=road["lat"], lon=road["lon"], mode="lines", name=road["name"], line={"width": 2, "color": "#9fb7d5"}, hovertemplate=f"{road['name']}<extra></extra>", showlegend=False))
@@ -232,18 +252,23 @@ def _three_d_figure(cube: RadarVoxelCube) -> go.Figure:
     return fig
 
 
-def _render_header(payload: dict[str, Any], offline: bool) -> None:
+def _render_header(payload: dict[str, Any], offline: bool, public: dict[str, Any] | None = None) -> None:
     location = payload.get("location", {})
-    badge_html = "".join(_quality_badge(value) for value in payload.get("sources", {}).values())
+    badge_sources = list(payload.get("sources", {}).values())
+    if public:
+        badge_sources.extend(public.get(name, {}) for name in ("weather", "osm", "geocode"))
+    badge_html = "".join(_quality_badge(value) for value in badge_sources if value)
     mode = "离线演示" if offline else "授权源运行"
-    st.markdown(f"<div class='topbar'><div><span class='topbar-title'>天衡 · 城市天气影响研判台</span><span class='topbar-sub'>内部决策支持 · {mode} · {location.get('latitude', 0):.4f}, {location.get('longitude', 0):.4f}</span></div><div class='status-row'>{badge_html}</div></div>", unsafe_allow_html=True)
+    place = ((public or {}).get("geocode", {}).get("data") or {}).get("display_name", "")
+    place_text = f" · {place.split(',')[0]}" if place else ""
+    st.markdown(f"<div class='topbar'><div><span class='topbar-title'>天衡 · 城市天气影响研判台</span><span class='topbar-sub'>内部决策支持 · {mode}{place_text} · {location.get('latitude', 0):.4f}, {location.get('longitude', 0):.4f}</span></div><div class='status-row'>{badge_html}</div></div>", unsafe_allow_html=True)
     if offline:
         st.info("离线演示模式：天气、雷达和排水结果会明确标记为 SYNTHETIC。")
     else:
         st.warning("授权数据源运行中：正式发布仍需要预报员审核、预警签发和审计留痕。")
 
 
-def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float) -> None:
+def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, public: dict[str, Any] | None = None) -> None:
     risk, snapshot, impact = payload["risk"], payload["risk"]["snapshot"], payload["impact"]
     level = risk.get("risk_level", "未知")
     cube = _radar_cube(payload, latitude, longitude)
@@ -282,9 +307,11 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float) 
     map_col, status_col = st.columns([2.35, .85])
     with map_col:
         st.markdown("<div class='map-shell'>", unsafe_allow_html=True)
-        st.plotly_chart(_map_figure(payload, latitude, longitude, show_radar=show_radar, show_admin=show_admin, show_roads=show_roads, show_hospitals=show_hospitals, show_flow=show_flow), use_container_width=True, config={"displaylogo": False, "scrollZoom": True})
+        st.plotly_chart(_map_figure(payload, latitude, longitude, show_radar=show_radar, show_admin=show_admin, show_roads=show_roads, show_hospitals=show_hospitals, show_flow=show_flow, public=public), use_container_width=True, config={"displaylogo": False, "scrollZoom": True})
         st.markdown("</div>", unsafe_allow_html=True)
-        st.caption("真实 OpenStreetMap 底图；行政区、道路、医院和汇流为演示图层，接入授权 GIS 后替换。")
+        osm_status = (public or {}).get("osm", {}).get("status", "UNAVAILABLE")
+        osm_note = "已拉取 OSM 公开图层" if osm_status == "LIVE" else "未拉取到 OSM 图层，当前显示演示覆盖层"
+        st.caption(f"真实 OpenStreetMap 底图 · {osm_note} · OSM 数据遵循 ODbL 1.0")
     with status_col:
         st.markdown("<div class='panel'><div class='panel-title'>值班状态</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='hero-label'>当前模型风险</div><div class='hero-level' style='font-size:2.2rem;--risk-colour:{_risk_colour(level)}'>{level}</div>", unsafe_allow_html=True)
@@ -308,7 +335,23 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float) 
         st.caption("模型方法：" + str(risk.get("evidence", {}).get("method", "unknown")))
     with bottom_right:
         st.markdown("### 数据健康")
-        st.markdown(" ".join(_quality_badge(value) for value in payload.get("sources", {}).values()), unsafe_allow_html=True)
+        source_values = list(payload.get("sources", {}).values())
+        if public:
+            source_values.extend(public.get(name, {}) for name in ("weather", "osm", "geocode"))
+        st.markdown(" ".join(_quality_badge(value) for value in source_values if value), unsafe_allow_html=True)
+
+    if public:
+        with st.expander("公开小时预报（Open-Meteo）", expanded=False):
+            weather_data = (public.get("weather", {}).get("data") or {})
+            hourly = pd.DataFrame(weather_data.get("hourly", []))
+            if not hourly.empty:
+                hourly["time"] = pd.to_datetime(hourly["time"], errors="coerce")
+                forecast_fig = px.line(hourly, x="time", y=["temperature_c", "precipitation_mm"], markers=True, labels={"value": "数值", "time": "本地时间", "variable": "指标"}, title="未来 24 小时公开预报")
+                forecast_fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(forecast_fig, use_container_width=True, config={"displaylogo": False})
+                st.caption("来源：Open-Meteo Forecast API；小时预报用于前端参考，不替代授权业务预报。")
+            else:
+                st.info("公开天气接口暂不可用，已保留模型/演示结果。")
 
 
 def _render_radar(payload: dict[str, Any], latitude: float, longitude: float) -> None:
@@ -407,16 +450,18 @@ def main() -> None:
     st.sidebar.caption("城市暴雨与内涝 · 内部决策支持")
     page = st.sidebar.radio("工作台", ["值班总览", "雷达与短临", "内涝排水情景", "影响与资产", "数据质量与证据"], label_visibility="collapsed")
     st.sidebar.divider()
-    offline = st.sidebar.toggle("离线演示模式", value=True, help="开启后不请求外部服务，并将结果明确标记为 SYNTHETIC。")
+    offline = st.sidebar.toggle("离线演示模式", value=False, key="offline_mode_v2", help="开启后不请求外部服务，并将结果明确标记为 SYNTHETIC。")
+    public_enabled = st.sidebar.toggle("公开数据层", value=True, key="public_data_v1", help="从 Open-Meteo、OpenStreetMap Overpass 和 Nominatim 获取天气、医院、道路、行政区和位置名称。")
     latitude = st.sidebar.number_input("纬度", value=43.88, min_value=-90.0, max_value=90.0, format="%.5f")
     longitude = st.sidebar.number_input("经度", value=125.32, min_value=-180.0, max_value=180.0, format="%.5f")
     if st.sidebar.button("刷新研判", type="primary", use_container_width=True):
-        _run.clear(); st.rerun()
+        _run.clear(); _public_bundle.clear(); st.rerun()
     st.sidebar.markdown("<div class='audit'>模型风险 ≠ 官方预警<br>当前后端：单点服务</div>", unsafe_allow_html=True)
     with st.spinner("正在生成研判结果…"):
         payload = _run(float(latitude), float(longitude), offline)
-    _render_header(payload, offline)
-    if page == "值班总览": _render_cockpit(payload, float(latitude), float(longitude))
+    public = _public_bundle(float(latitude), float(longitude)) if public_enabled and not offline else None
+    _render_header(payload, offline, public)
+    if page == "值班总览": _render_cockpit(payload, float(latitude), float(longitude), public)
     elif page == "雷达与短临": _render_radar(payload, float(latitude), float(longitude))
     elif page == "内涝排水情景": _render_drainage(payload)
     elif page == "影响与资产": _render_assets(payload)

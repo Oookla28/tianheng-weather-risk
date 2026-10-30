@@ -19,3 +19,4 @@ def test_quality_badges_keep_source_provenance_visible():
     assert app._quality({"is_live": False, "source": "cma-cache", "provenance": {"label_quality": "cached"}}) == "CACHED"
     assert app._quality({"is_live": False, "source": "synthetic-radar", "provenance": {"label_quality": "synthetic"}}) == "SYNTHETIC"
     assert app._quality({"is_live": False, "source": "no-configured-feed", "provenance": {"label_quality": "unavailable"}}) == "UNAVAILABLE"
+    assert app._quality({"is_live": False, "source": "no-configured-feed", "provenance": {"label_quality": "synthetic"}}) == "UNAVAILABLE"
