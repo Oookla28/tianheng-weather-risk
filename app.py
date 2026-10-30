@@ -180,13 +180,19 @@ def _demo_layers(latitude: float, longitude: float) -> dict[str, Any]:
 def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, show_radar: bool, show_admin: bool, show_roads: bool, show_hospitals: bool, show_flow: bool, public: dict[str, Any] | None = None) -> go.Figure:
     """Build a real basemap with switchable demo operational layers."""
     layers = _demo_layers(latitude, longitude)
-    osm_data = ((public or {}).get("osm", {}).get("data") or {})
-    if osm_data.get("hospitals"):
-        layers["hospitals"] = osm_data["hospitals"]
-    if osm_data.get("roads"):
-        layers["roads"] = osm_data["roads"]
-    if osm_data.get("boundaries"):
-        layers["boundaries"] = osm_data["boundaries"]
+    osm_result = (public or {}).get("osm", {})
+    osm_data = osm_result.get("data") or {}
+    if osm_result.get("status") == "LIVE":
+        layers["hospitals"] = osm_data.get("hospitals", [])
+        layers["roads"] = osm_data.get("roads", [])
+        layers["boundaries"] = osm_data.get("boundaries", [])
+    else:
+        if osm_data.get("hospitals"):
+            layers["hospitals"] = osm_data["hospitals"]
+        if osm_data.get("roads"):
+            layers["roads"] = osm_data["roads"]
+        if osm_data.get("boundaries"):
+            layers["boundaries"] = osm_data["boundaries"]
     fig = go.Figure()
     cube = _radar_cube(payload, latitude, longitude)
     if show_radar and cube is not None:
@@ -212,7 +218,8 @@ def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, s
         for road in layers["roads"]:
             fig.add_trace(go.Scattermap(lat=road["lat"], lon=road["lon"], mode="lines", name=road["name"], line={"width": 2, "color": "#9fb7d5"}, hovertemplate=f"{road['name']}<extra></extra>", showlegend=False))
     if show_hospitals:
-        fig.add_trace(go.Scattermap(lat=[item["lat"] for item in layers["hospitals"]], lon=[item["lon"] for item in layers["hospitals"]], mode="markers+text", name="医院", text=[item["name"] for item in layers["hospitals"]], textposition="top center", marker={"size": 13, "color": [RISK_COLOURS[item["risk"]] for item in layers["hospitals"]]}, hovertemplate="%{text}<extra></extra>"))
+        if layers["hospitals"]:
+            fig.add_trace(go.Scattermap(lat=[item["lat"] for item in layers["hospitals"]], lon=[item["lon"] for item in layers["hospitals"]], mode="markers+text", name="医院", text=[item["name"] for item in layers["hospitals"]], textposition="top center", marker={"size": 13, "color": [RISK_COLOURS[item["risk"]] for item in layers["hospitals"]]}, hovertemplate="%{text}<extra></extra>"))
     if show_flow:
         phase = int(pd.Timestamp.now().timestamp() * 2) % 2
         for index, flow in enumerate(layers["flows"]):
@@ -318,7 +325,10 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
         st.markdown(f"<div class='mini-label'>降水 / 风速</div><div class='mini-value'>{snapshot.get('precipitation_mm', 0):.1f} mm · {snapshot.get('wind_speed_kmh', 0):.1f} km/h</div>", unsafe_allow_html=True)
         st.markdown("<hr style='border-color:#203452'>", unsafe_allow_html=True)
         st.markdown("<div class='panel-title'>重点对象</div>", unsafe_allow_html=True)
-        for name, value in (("市中心医院", "优先巡查"), ("滨河路", "关注积水"), ("排水泵站", "待接入")):
+        osm_live = (public or {}).get("osm", {}).get("status") == "LIVE"
+        osm_hospitals = ((public or {}).get("osm", {}).get("data") or {}).get("hospitals", [])
+        hospital_value = "OSM 公开数据" if osm_live and osm_hospitals else ("OSM 当前范围未返回" if osm_live else "演示对象")
+        for name, value in (("医院图层", hospital_value), ("道路图层", "OSM 公开数据" if osm_live else "演示道路"), ("排水泵站", "待接入")):
             st.markdown(f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #203452;padding:.48rem 0'><span class='mini-label'>{name}</span><span style='color:#facc15;font-size:.75rem'>{value}</span></div>", unsafe_allow_html=True)
         st.markdown("<div class='callout warning-callout' style='margin-top:.75rem'><b>官方预警：未接入</b><br>模型风险不等于红/橙/黄/蓝预警。</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
