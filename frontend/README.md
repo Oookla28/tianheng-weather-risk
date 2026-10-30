@@ -27,3 +27,9 @@ separate, human-reviewed workflow.
 The visual theme is a dark duty-room layout. The interface never presents a
 synthetic or cached result as an official warning, and it does not claim a
 city-wide risk grid until the backend exposes spatial risk and asset APIs.
+
+## 首页值班大屏
+
+首页采用宋体和深色全屏值班台布局，主视觉为 OpenStreetMap 底图，提供可开关的雷达回波、行政区边界、道路、医院和汇流演示图层。首页同时展示趋势提示—灾害提醒—预警研判—正式发布时间轴，并可展开三维对流体查看雷达体素结构。
+
+OpenStreetMap 是真实底图；行政区、道路、医院和汇流覆盖层当前是演示数据，待授权 GIS/资产接口接入后替换。模型风险、缓存数据和合成数据仍不会被包装成正式气象预警。
