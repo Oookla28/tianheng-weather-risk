@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 
 import numpy as np
@@ -182,7 +184,46 @@ def _demo_layers(latitude: float, longitude: float) -> dict[str, Any]:
     return {"boundary": boundary, "roads": roads, "hospitals": hospitals, "flows": flows}
 
 
-def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, show_radar: bool, show_admin: bool, show_roads: bool, show_hospitals: bool, show_flow: bool, public: dict[str, Any] | None = None) -> go.Figure:
+def _warning_colour(level: str) -> str:
+    return {"红色": "#fb7185", "橙色": "#fb923c", "黄色": "#facc15", "蓝色": "#60a5fa"}.get(level, "#cbd5e1")
+
+
+def _warning_meta(warning: dict[str, Any]) -> dict[str, Any]:
+    """Derive a UI countdown from the public warning text when expiry is absent."""
+    effective = str(warning.get("effective", ""))
+    start = None
+    for fmt in ("%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M"):
+        try:
+            start = datetime.strptime(effective[:16], fmt).replace(tzinfo=timezone(timedelta(hours=8)))
+            break
+        except ValueError:
+            continue
+    if start is None:
+        start = datetime.now(timezone.utc)
+    text = f"{warning.get('headline', '')} {warning.get('description', '')}"
+    duration_match = re.search(r"未来\s*(\d+)\s*小时", text)
+    duration_hours = int(duration_match.group(1)) if duration_match else 24
+    expiry = start + timedelta(hours=duration_hours)
+    remaining = expiry - datetime.now(timezone(timedelta(hours=8)))
+    if remaining.total_seconds() <= 0:
+        state = "已解除"
+    elif "升级" in text:
+        state = "升级"
+    elif remaining.total_seconds() <= 2 * 3600:
+        state = "即将解除"
+    else:
+        state = "持续"
+    return {"state": state, "start": start, "expiry": expiry, "remaining": remaining}
+
+
+def _warning_remaining_text(meta: dict[str, Any]) -> str:
+    seconds = int(max(0, meta["remaining"].total_seconds()))
+    if meta["state"] == "已解除":
+        return "已过期"
+    return f"剩余 {seconds // 3600}小时{(seconds % 3600) // 60:02d}分"
+
+
+def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, show_radar: bool, show_admin: bool, show_roads: bool, show_hospitals: bool, show_flow: bool, public: dict[str, Any] | None = None, selected_warning: dict[str, Any] | None = None) -> go.Figure:
     """Build a real basemap with switchable demo operational layers."""
     layers = _demo_layers(latitude, longitude)
     osm_result = (public or {}).get("osm", {})
@@ -231,6 +272,16 @@ def _map_figure(payload: dict[str, Any], latitude: float, longitude: float, *, s
             lat_values = flow["lat"] if phase == 0 or index == 0 else list(reversed(flow["lat"]))
             lon_values = flow["lon"] if phase == 0 or index == 0 else list(reversed(flow["lon"]))
             fig.add_trace(go.Scattermap(lat=lat_values, lon=lon_values, mode="lines+markers", name="汇流方向", line={"width": 3, "color": "#22d3ee"}, marker={"size": 8, "color": "#67e8f9"}, hovertemplate="地表汇流方向（演示）<extra></extra>", showlegend=index == 0))
+    if selected_warning:
+        warning_lat = selected_warning.get("latitude") or latitude
+        warning_lon = selected_warning.get("longitude") or longitude
+        radius = 0.035
+        angles = np.linspace(0, 2 * np.pi, 48)
+        circle_lat = [float(warning_lat) + radius * np.sin(angle) for angle in angles]
+        circle_lon = [float(warning_lon) + radius * np.cos(angle) / max(0.3, np.cos(np.deg2rad(float(warning_lat)))) for angle in angles]
+        colour = _warning_colour(selected_warning.get("level", ""))
+        fig.add_trace(go.Scattermap(lat=circle_lat, lon=circle_lon, mode="lines", name="预警影响范围", line={"width": 4, "color": colour}, hovertemplate="预警影响范围<extra></extra>"))
+        fig.add_trace(go.Scattermap(lat=[warning_lat], lon=[warning_lon], mode="markers+text", name="选中预警中心", text=[selected_warning.get("title") or selected_warning.get("headline") or "选中预警"], textposition="top center", marker={"size": 18, "color": colour}, hovertemplate="%{text}<extra></extra>"))
     fig.add_trace(go.Scattermap(lat=[latitude], lon=[longitude], mode="markers+text", name="当前研判点", text=["当前研判点"], textposition="bottom center", marker={"size": 16, "color": "#f8fafc", "allowoverlap": True}, hovertemplate="当前研判点<extra></extra>"))
     fig.update_layout(
         height=610,
@@ -289,6 +340,10 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
     warnings = ((public or {}).get("warnings", {}).get("data") or {}).get("warnings", [])
     warning_rank = {"红色": 4, "橙色": 3, "黄色": 2, "蓝色": 1}
     highest_warning = max(warnings, key=lambda item: warning_rank.get(item.get("level", ""), 0), default=None)
+    warning_ids = [str(item.get("id") or index) for index, item in enumerate(warnings)]
+    if warning_ids and st.session_state.get("selected_warning_id") not in warning_ids:
+        st.session_state["selected_warning_id"] = warning_ids[0]
+    selected_warning = next((item for index, item in enumerate(warnings) if str(item.get("id") or index) == st.session_state.get("selected_warning_id")), None)
     st.markdown("## 城市气象灾害值班总览")
     st.caption("实时监测 · 影响研判 · 预警流程 · 联动处置")
 
@@ -328,7 +383,7 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
     map_col, status_col = st.columns([2.35, .85])
     with map_col:
         st.markdown("<div class='map-shell'>", unsafe_allow_html=True)
-        st.plotly_chart(_map_figure(payload, latitude, longitude, show_radar=show_radar, show_admin=show_admin, show_roads=show_roads, show_hospitals=show_hospitals, show_flow=show_flow, public=public), use_container_width=True, config={"displaylogo": False, "scrollZoom": True})
+        st.plotly_chart(_map_figure(payload, latitude, longitude, show_radar=show_radar, show_admin=show_admin, show_roads=show_roads, show_hospitals=show_hospitals, show_flow=show_flow, public=public, selected_warning=selected_warning), use_container_width=True, config={"displaylogo": False, "scrollZoom": True})
         st.markdown("</div>", unsafe_allow_html=True)
         osm_status = (public or {}).get("osm", {}).get("status", "UNAVAILABLE")
         osm_note = "已拉取 OSM 公开图层" if osm_status == "LIVE" else "未拉取到 OSM 图层，当前显示演示覆盖层"
@@ -345,8 +400,18 @@ def _render_cockpit(payload: dict[str, Any], latitude: float, longitude: float, 
         for name, value in (("医院图层", hospital_value), ("道路图层", "OSM 公开数据" if osm_live else "演示道路"), ("排水泵站", "待接入")):
             st.markdown(f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #203452;padding:.48rem 0'><span class='mini-label'>{name}</span><span style='color:#facc15;font-size:.75rem'>{value}</span></div>", unsafe_allow_html=True)
         if warnings:
-            for warning in warnings[:3]:
-                st.markdown(f"<div class='callout warning-callout' style='margin-top:.55rem'><b>{warning.get('level', '未知')} · {warning.get('title', '公开预警')}</b><br>{warning.get('effective', '')}<br>{warning.get('description', '')[:100]}...</div>", unsafe_allow_html=True)
+            st.markdown("<div class='panel-title'>可点击预警列表</div>", unsafe_allow_html=True)
+            for index, warning in enumerate(warnings[:5]):
+                warning_id = str(warning.get("id") or index)
+                meta = _warning_meta(warning)
+                label = f"{warning.get('level', '未知')} · {warning.get('title') or warning.get('headline', '公开预警')[:28]} · {meta['state']}"
+                if st.button(label, key=f"warning_select_{warning_id}", use_container_width=True):
+                    st.session_state["selected_warning_id"] = warning_id
+                    st.rerun()
+            if selected_warning:
+                meta = _warning_meta(selected_warning)
+                colour = _warning_colour(selected_warning.get("level", ""))
+                st.markdown(f"<div class='callout warning-callout' style='border-left-color:{colour};margin-top:.55rem'><b>{selected_warning.get('level', '未知')} · {selected_warning.get('title') or selected_warning.get('headline', '公开预警')}</b><br>状态：{meta['state']} · {_warning_remaining_text(meta)}<br>生效：{selected_warning.get('effective', '')}<br>{selected_warning.get('description', '')}</div>", unsafe_allow_html=True)
         else:
             st.markdown("<div class='callout warning-callout' style='margin-top:.75rem'><b>官方预警：暂无</b><br>模型风险不等于红/橙/黄/蓝预警。</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
