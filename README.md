@@ -2,7 +2,7 @@
 
 Tianheng is a location-first weather-impact intelligence system for urban heavy-rain and flood-risk decisions. It turns weather context, terrain susceptibility, critical facilities, and response constraints into an auditable risk-to-action workflow.
 
-The repository is a research and competition package. The public repository intentionally contains the backend and research materials; the Streamlit frontend is kept out of the GitHub release.
+The repository is a research and competition package. It contains the reproducible backend and a small Streamlit decision-support cockpit. The cockpit is an internal research UI, not an official warning publisher.
 
 ## What the system is designed to answer
 
@@ -61,7 +61,7 @@ python -m pip install -r requirements.txt
 python -m pytest -q
 ```
 
-The frontend is intentionally excluded from this public source release. Run it from the local project workspace when a visual demonstration is needed.
+The Streamlit cockpit is included as `app.py`. Run `python -m streamlit run app.py` for the local demonstration. The default offline mode marks synthetic data explicitly.
 
 Run the test suite with:
 
@@ -95,7 +95,7 @@ tests/test_live_adapters.py live-source contract tests
 .gitignore             release hygiene and generated-file rules
 ```
 
-The public drop intentionally omits the Streamlit frontend entrypoint and local-only presentation assets.
+The public drop includes the Streamlit entrypoint; local credentials, caches, and authorised data remain excluded.
 
 ## Live data deployment
 
